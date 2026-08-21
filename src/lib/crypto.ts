@@ -23,6 +23,15 @@ export function base64UrlToBase64(value: string): string {
   return base64 + "=".repeat((4 - (base64.length % 4)) % 4);
 }
 
+export function standardBase64ToBuffer(base64: string): ArrayBuffer {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 export function base64ToBuffer(base64: string): ArrayBuffer {
   const binary = window.atob(base64UrlToBase64(base64));
   const bytes = new Uint8Array(binary.length);
@@ -67,7 +76,10 @@ export async function encryptData(
     key,
     encoded
   );
-  return { ciphertext: bufferToBase64(ciphertext), iv: bufferToBase64(iv.buffer as ArrayBuffer) };
+  return {
+    ciphertext: bufferToBase64(ciphertext),
+    iv: bufferToBase64(iv.buffer as ArrayBuffer),
+  };
 }
 
 export async function decryptData(
@@ -76,9 +88,9 @@ export async function decryptData(
   key: CryptoKey
 ): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBuffer(ivB64) as ArrayBuffer },
+    { name: "AES-GCM", iv: standardBase64ToBuffer(ivB64) as ArrayBuffer },
     key,
-    base64ToBuffer(ciphertextB64) as ArrayBuffer
+    standardBase64ToBuffer(ciphertextB64) as ArrayBuffer
   );
   return new TextDecoder().decode(decrypted);
 }
@@ -130,11 +142,11 @@ export async function unwrapPrimaryKey(
   password: string,
   saltB64: string
 ): Promise<CryptoKey> {
-  const wrappingKey = await deriveWrappingKey(password, base64ToBuffer(saltB64) as ArrayBuffer);
+  const wrappingKey = await deriveWrappingKey(password, standardBase64ToBuffer(saltB64) as ArrayBuffer);
   const rawKey = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBuffer(keyIvB64) as ArrayBuffer },
+    { name: "AES-GCM", iv: standardBase64ToBuffer(keyIvB64) as ArrayBuffer },
     wrappingKey,
-    base64ToBuffer(wrappedKeyB64) as ArrayBuffer
+    standardBase64ToBuffer(wrappedKeyB64) as ArrayBuffer
   );
   return crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, true, [
     "encrypt",
@@ -237,11 +249,11 @@ export async function unlockAccountPrivateKey(
   password: string
 ): Promise<CryptoKey> {
   const meta = JSON.parse(keyMetadataJson) as { salt: string; iv: string };
-  const wrappingKey = await deriveAccountPasswordKey(password, base64ToBuffer(meta.salt) as ArrayBuffer);
+  const wrappingKey = await deriveAccountPasswordKey(password, standardBase64ToBuffer(meta.salt) as ArrayBuffer);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBuffer(meta.iv) as ArrayBuffer },
+    { name: "AES-GCM", iv: standardBase64ToBuffer(meta.iv) as ArrayBuffer },
     wrappingKey,
-    base64ToBuffer(encryptedPrivateKeyB64) as ArrayBuffer
+    standardBase64ToBuffer(encryptedPrivateKeyB64) as ArrayBuffer
   );
   const privateJwk = JSON.parse(new TextDecoder().decode(decrypted)) as JsonWebKey;
   return importEcdhPrivateJwk(privateJwk);
@@ -300,11 +312,11 @@ export async function unwrapContentKeyFromSender(
     recipientPrivateKey,
     256
   );
-  const aesWrapKey = await deriveAesWrapKey(sharedSecret, base64ToBuffer(meta.salt) as ArrayBuffer);
+  const aesWrapKey = await deriveAesWrapKey(sharedSecret, standardBase64ToBuffer(meta.salt) as ArrayBuffer);
   const rawKey = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64ToBuffer(meta.iv) as ArrayBuffer },
+    { name: "AES-GCM", iv: standardBase64ToBuffer(meta.iv) as ArrayBuffer },
     aesWrapKey,
-    base64ToBuffer(wrappedKeyB64) as ArrayBuffer
+    standardBase64ToBuffer(wrappedKeyB64) as ArrayBuffer
   );
   return crypto.subtle.importKey("raw", rawKey, { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
 }
@@ -312,3 +324,4 @@ export async function unwrapContentKeyFromSender(
 export function sanitizeFilename(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 200) || "download";
 }
+

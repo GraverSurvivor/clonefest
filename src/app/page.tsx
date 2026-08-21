@@ -588,10 +588,7 @@ export default function AegisSharePage() {
         });
         if (!res.ok) throw new Error("Server error " + res.status);
         const data = await res.json();
-        const origin = window.location.origin;
-        const isLocal = ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
-        const shareOrigin = isLocal && serverConfig.localIp !== "localhost"
-          ? `http://${serverConfig.localIp}:${serverConfig.port}` : origin;
+        const shareOrigin = window.location.origin;
         const fullShareUrl = `${shareOrigin}/#${data.id}${shareableFragment}`;
         setResultIsAccount(false);
         setShareUrl(fullShareUrl);
@@ -1072,13 +1069,92 @@ export default function AegisSharePage() {
     </section>
   );
 
+  const renderCinematicView = () => (
+    <div className="cinematic-backdrop fade-in">
+      <div className="cinematic-card">
+        <div className="shimmer-effect" />
+        <div className="cinematic-header">
+          <div>
+            <h2 className="cinematic-title">{viewIsAccount ? "Protected Share" : "Decrypted Secure Paste"}</h2>
+            <div className="status-tags">
+              {isBurn && <span className="badge badge-danger"><i className="fa-solid fa-fire-flame-curved" /> Burn On Read</span>}
+              {expiresAt && !isBurn && <span className="badge badge-warning"><i className="fa-regular fa-clock" /> Expires: {countdown}</span>}
+              {decryptedPaste && !viewError && <span className="badge badge-success"><i className="fa-solid fa-circle-check" /> Decrypted Client-Side</span>}
+              {viewIsAccount && <span className="badge badge-secure"><i className="fa-solid fa-user-shield" /> Account Share</span>}
+            </div>
+            {viewIsAccount && viewSender && (
+              <p style={{ marginTop: 8, color: "var(--text-muted)", fontSize: 14 }}>From {viewSender.username} · Traceable View enabled</p>
+            )}
+          </div>
+          <div className="view-tabs">
+            <button className={`btn-tab${viewTab === "text" ? " active" : ""}`} onClick={() => setViewTab("text")}><i className="fa-solid fa-code" /> Plain Text</button>
+            <button className={`btn-tab${viewTab === "markdown" ? " active" : ""}`} onClick={() => setViewTab("markdown")}><i className="fa-brands fa-markdown" /> Markdown</button>
+          </div>
+        </div>
+
+        <div className="cinematic-body">
+          {viewIsAccount && !viewError && (
+            <div className="info-banner"><i className="fa-solid fa-fingerprint" /> Protected content is traceably displayed to discourage unauthorized sharing.</div>
+          )}
+          {isBurn && (
+            <div className="alert alert-warning"><i className="fa-solid fa-circle-info" /><span><strong>Burn-On-Read:</strong> This share is now deleted from the server.</span></div>
+          )}
+          <TraceableView
+            recipientLabel={sessionUser?.email ?? sessionUser?.username ?? "viewer"}
+            messageId={viewPasteId}
+            enabled={viewIsAccount && !viewError}
+          >
+            <div className="editor-wrapper" style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              {viewTab === "text"
+                ? <pre className="view-text-area" style={{ maxHeight: '50vh', overflowY: 'auto' }}>{decryptedPaste!.text || "(empty)"}</pre>
+                : <div ref={viewMdRef} className="markdown-preview-area md-body" style={{ maxHeight: '50vh', overflowY: 'auto' }} />}
+            </div>
+            {decryptedPaste!.file && (
+              <div className="config-card file-download-card">
+                <h3><i className="fa-solid fa-paperclip" /> Decrypted Attachment</h3>
+                <div className="file-download-bar">
+                  <div className="file-details">
+                    <i className="fa-solid fa-file-shield file-details-icon" />
+                    <div className="file-meta">
+                      <span className="file-name-txt">{sanitizeFilename(decryptedPaste!.file.name)}</span>
+                      <span className="file-size-txt">{formatBytes(decryptedPaste!.file.size)}</span>
+                    </div>
+                  </div>
+                  <button className="btn-primary" onClick={() => {
+                    const a = document.createElement("a");
+                    a.href = decryptedPaste!.file!.data;
+                    a.download = sanitizeFilename(decryptedPaste!.file!.name);
+                    a.click();
+                    showToast("Download started.", "success");
+                  }}><i className="fa-solid fa-download" /> Download</button>
+                </div>
+              </div>
+            )}
+          </TraceableView>
+        </div>
+
+        <div className="cinematic-footer">
+          <button className="btn-secondary" onClick={() => copyText(decryptedPaste?.text ?? "", "Content copied!")}>
+            <i className="fa-solid fa-copy" /> Copy Content
+          </button>
+          <a href="/" className="btn-primary" onClick={(e) => {
+            e.preventDefault(); window.location.hash = ""; setViewMode("app");
+            setDecryptedPaste(null); setViewError(null);
+          }}>
+            <i className="fa-solid fa-xmark" /> Close
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className="bg-glow bg-glow-1" />
       <div className="bg-glow bg-glow-2" />
       <div className="bg-glow bg-glow-3" />
 
-      <div className="app-wrap">
+      <div className={`app-wrap ${viewMode === "view" && decryptedPaste ? "app-blurred" : ""}`}>
         <header className="app-header">
           <div className="container header-container">
             <a href="/" className="logo" onClick={(e) => { e.preventDefault(); window.location.hash = ""; setViewMode("app"); setNav("create"); }}>
@@ -1086,7 +1162,7 @@ export default function AegisSharePage() {
               <span>Aegis<span className="text-accent">Share</span></span>
             </a>
             <div className="header-right">
-              {viewMode === "app" && (
+              {(viewMode === "app" || (viewMode === "view" && decryptedPaste)) && (
                 <nav className="app-nav">
                   {(["create", "inbox", "sent", "account"] as NavTab[]).map((tab) => (
                     <button key={tab} className={`nav-link${nav === tab ? " active" : ""}`}
@@ -1113,13 +1189,19 @@ export default function AegisSharePage() {
               <p style={{ marginTop: 16, color: "var(--text-muted)" }}>Fetching encrypted payload…</p>
             </section>
           )}
-          {viewMode === "view" && renderViewPanel()}
-          {viewMode === "app" && nav === "create" && renderCreatePanel()}
-          {viewMode === "app" && nav === "inbox" && renderShareList(inboxItems, "inbox")}
-          {viewMode === "app" && nav === "sent" && renderShareList(sentItems, "sent")}
-          {viewMode === "app" && nav === "account" && renderAccountPanel()}
+          {viewMode === "view" && !decryptedPaste && renderViewPanel()}
+          {(viewMode === "app" || (viewMode === "view" && decryptedPaste)) && (
+            <>
+              {nav === "create" && renderCreatePanel()}
+              {nav === "inbox" && renderShareList(inboxItems, "inbox")}
+              {nav === "sent" && renderShareList(sentItems, "sent")}
+              {nav === "account" && renderAccountPanel()}
+            </>
+          )}
         </main>
       </div>
+
+      {viewMode === "view" && !!decryptedPaste && renderCinematicView()}
 
       {/* Unlock keys modal */}
       {showUnlockModal && (
@@ -1233,3 +1315,8 @@ export default function AegisSharePage() {
     </>
   );
 }
+
+
+
+
+
