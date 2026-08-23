@@ -33,12 +33,31 @@ export function standardBase64ToBuffer(base64: string): ArrayBuffer {
 }
 
 export function base64ToBuffer(base64: string): ArrayBuffer {
-  const binary = window.atob(base64UrlToBase64(base64));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+  // Attempt to decode the common forms we encounter in-generated links:
+  // 1) URL-safe base64 (no padding) — the common case
+  // 2) Percent-encoded fragment values produced by some environments
+  // Try the simple path first and fall back to decodeURIComponent.
+  try {
+    const binary = window.atob(base64UrlToBase64(base64));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  } catch (err) {
+    // Fallback: try decoding as percent-encoded then convert
+    try {
+      const decoded = decodeURIComponent(base64);
+      const binary = window.atob(base64UrlToBase64(decoded));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    } catch (err2) {
+      throw new Error("Invalid base64 input");
+    }
   }
-  return bytes.buffer;
 }
 
 // ---------- AES-256-GCM ----------
